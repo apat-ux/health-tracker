@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alex Health Tracker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        health: { 50:'#f0fdf4', 100:'#dcfce7', 200:'#bbf7d0', 300:'#86efac', 400:'#4ade80', 500:'#22c55e', 600:'#16a34a', 700:'#15803d', 800:'#166534', 900:'#14532d' },
+        ocean: { 50:'#eff6ff', 100:'#dbeafe', 200:'#bfdbfe', 300:'#93c5fd', 400:'#60a5fa', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8', 800:'#1e40af', 900:'#1e3a5a' }
+      }
+    }
+  }
+}
+</script>
+<style>
+  .tab-btn.active { border-bottom: 3px solid #22c55e; color: #22c55e; font-weight: 600; }
+  .dark .tab-btn.active { color: #4ade80; border-color: #4ade80; }
+  .progress-ring-circle { transition: stroke-dashoffset 0.5s ease; }
+  .fade-in { animation: fadeIn 0.25s ease-in; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .day-highlight { box-shadow: inset 0 0 0 2px #22c55e; border-radius: 0.5rem; }
+  .dark .day-highlight { box-shadow: inset 0 0 0 2px #4ade80; }
+  input[type="checkbox"] { accent-color: #22c55e; width: 1.15rem; height: 1.15rem; cursor: pointer; }
+  .heatmap-cell { width: 14px; height: 14px; border-radius: 2px; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen transition-colors duration-300">
+
+<!-- Password Gate -->
+<div id="lockScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50 dark:bg-gray-950 transition-colors">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 w-full max-w-sm mx-4 text-center">
+    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-health-100 dark:bg-health-900/30 flex items-center justify-center">
+      <svg class="w-8 h-8 text-health-600 dark:text-health-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+    </div>
+    <h2 class="text-lg font-bold dark:text-white mb-1">Alex Health Tracker</h2>
+    <p class="text-xs text-gray-400 mb-5">Enter password to continue</p>
+    <form onsubmit="attemptUnlock(event)">
+      <input type="password" id="passwordInput" placeholder="Password" autofocus class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-health-400 outline-none mb-3">
+      <p id="passwordError" class="text-red-500 text-xs mb-3 hidden">Incorrect password</p>
+      <button type="submit" class="w-full py-3 bg-health-600 hover:bg-health-700 text-white rounded-lg text-sm font-semibold transition">Unlock</button>
+    </form>
+  </div>
+</div>
+
+<!-- Header -->
+<header class="bg-white dark:bg-gray-900 shadow-sm sticky top-0 z-30 transition-colors">
+  <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-bold text-health-700 dark:text-health-400">Alex Health Tracker</h1>
+      <p id="headerDate" class="text-xs text-gray-500 dark:text-gray-400"></p>
+    </div>
+    <button id="themeToggle" onclick="toggleTheme()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Toggle dark/light mode">
+      <svg id="sunIcon" class="w-5 h-5 text-gray-600 dark:text-gray-300 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <svg id="moonIcon" class="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- Tabs -->
+<nav class="bg-white dark:bg-gray-900 border-b dark:border-gray-700 transition-colors">
+  <div class="max-w-4xl mx-auto flex">
+    <button class="tab-btn active flex-1 py-3 text-sm text-center text-gray-500 dark:text-gray-400 border-b-3 border-transparent transition" onclick="switchTab('daily')" data-tab="daily">Daily Checklist</button>
+    <button class="tab-btn flex-1 py-3 text-sm text-center text-gray-500 dark:text-gray-400 border-b-3 border-transparent transition" onclick="switchTab('weekly')" data-tab="weekly">Weekly Schedule</button>
+    <button class="tab-btn flex-1 py-3 text-sm text-center text-gray-500 dark:text-gray-400 border-b-3 border-transparent transition" onclick="switchTab('progress')" data-tab="progress">Progress</button>
+  </div>
+</nav>
+
+<!-- Main Content -->
+<main class="max-w-4xl mx-auto px-4 py-5 pb-20">
+
+  <!-- TAB 1: DAILY CHECKLIST -->
+  <section id="tab-daily" class="tab-content fade-in">
+    <!-- Date nav -->
+    <div class="flex items-center justify-between mb-4">
+      <button onclick="changeDay(-1)" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"/></svg></button>
+      <div class="text-center">
+        <h2 id="dailyDateLabel" class="text-lg font-semibold dark:text-white"></h2>
+        <p id="dailyDayLabel" class="text-xs text-gray-500 dark:text-gray-400"></p>
+      </div>
+      <button onclick="changeDay(1)" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+    </div>
+
+    <!-- Progress Ring -->
+    <div class="flex justify-center mb-5">
+      <div class="relative w-24 h-24">
+        <svg class="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="42" fill="none" stroke-width="8" class="stroke-gray-200 dark:stroke-gray-700"/>
+          <circle id="progressRing" cx="50" cy="50" r="42" fill="none" stroke-width="8" stroke-linecap="round" class="progress-ring-circle stroke-health-500" stroke-dasharray="263.89" stroke-dashoffset="263.89"/>
+        </svg>
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <span id="progressCount" class="text-lg font-bold dark:text-white">0/12</span>
+          <span class="text-[10px] text-gray-400">completed</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Checklist Groups -->
+    <div id="checklistContainer" class="space-y-4"></div>
+  </section>
+
+  <!-- TAB 2: WEEKLY SCHEDULE -->
+  <section id="tab-weekly" class="tab-content hidden fade-in">
+    <div class="flex items-center justify-between mb-4">
+      <button onclick="changeWeek(-1)" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"/></svg></button>
+      <h2 id="weekLabel" class="text-lg font-semibold dark:text-white"></h2>
+      <button onclick="changeWeek(1)" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+    </div>
+    <div id="weekGrid" class="space-y-2"></div>
+  </section>
+
+  <!-- TAB 3: PROGRESS DASHBOARD -->
+  <section id="tab-progress" class="tab-content hidden fade-in">
+
+    <!-- Habit Streaks -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-5 transition-colors">
+      <h3 class="font-semibold text-sm mb-3 dark:text-white">Habit Streaks</h3>
+      <div class="flex gap-6 mb-4">
+        <div class="text-center">
+          <p id="currentStreak" class="text-3xl font-bold text-health-600 dark:text-health-400">0</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Current Streak</p>
+        </div>
+        <div class="text-center">
+          <p id="bestStreak" class="text-3xl font-bold text-ocean-600 dark:text-ocean-400">0</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Best Streak</p>
+        </div>
+        <div class="text-center">
+          <p id="totalDaysTracked" class="text-3xl font-bold text-gray-600 dark:text-gray-300">0</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Days Tracked</p>
+        </div>
+      </div>
+      <!-- Heatmap -->
+      <div>
+        <p class="text-xs text-gray-400 mb-1">Last 12 weeks</p>
+        <div id="heatmapContainer" class="flex gap-[3px] flex-wrap"></div>
+        <div class="flex items-center gap-1 mt-2 text-[10px] text-gray-400">
+          <span>Less</span>
+          <span class="heatmap-cell bg-gray-200 dark:bg-gray-700 inline-block"></span>
+          <span class="heatmap-cell bg-health-200 inline-block"></span>
+          <span class="heatmap-cell bg-health-400 inline-block"></span>
+          <span class="heatmap-cell bg-health-600 inline-block"></span>
+          <span>More</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weekly Completion Rate -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-5 transition-colors">
+      <h3 class="font-semibold text-sm mb-3 dark:text-white">Weekly Completion Rate</h3>
+      <div class="h-48"><canvas id="weeklyChart"></canvas></div>
+    </div>
+
+    <!-- Health Markers -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-5 transition-colors">
+      <h3 class="font-semibold text-sm mb-3 dark:text-white">Health Markers</h3>
+      <div class="h-64"><canvas id="markersChart"></canvas></div>
+      <!-- Marker Cards -->
+      <div id="markerCards" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4"></div>
+    </div>
+
+    <!-- Add Lab Result -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-5 transition-colors">
+      <h3 class="font-semibold text-sm mb-3 dark:text-white">Add Lab Result</h3>
+      <form id="labForm" onsubmit="addLabResult(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Date</label>
+          <input type="date" id="labDate" required class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-health-400 outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-3" id="labFields"></div>
+        <button type="submit" class="w-full py-2 bg-health-600 hover:bg-health-700 text-white rounded-lg text-sm font-medium transition">Save Lab Result</button>
+      </form>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// ===== PASSWORD GATE =====
+const PASS_HASH = '531d6fa4865ad939c2aff8f574db4e2b8b3452871cb5206e05e25eab5cd7d0f3';
+
+async function sha256(text) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function attemptUnlock(e) {
+  e.preventDefault();
+  const input = document.getElementById('passwordInput').value;
+  const hash = await sha256(input);
+  if (hash === PASS_HASH) {
+    sessionStorage.setItem('ht_unlocked', 'true');
+    document.getElementById('lockScreen').classList.add('hidden');
+    init();
+  } else {
+    document.getElementById('passwordError').classList.remove('hidden');
+    document.getElementById('passwordInput').value = '';
+    document.getElementById('passwordInput').focus();
+  }
+}
+
+function checkAuth() {
+  if (sessionStorage.getItem('ht_unlocked') === 'true') {
+    document.getElementById('lockScreen').classList.add('hidden');
+    init();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', checkAuth);
+
+// ===== DATA =====
+const CHECKLIST_ITEMS = [
+  { id:'sleep_hours', label:'Got 7-8 hours of sleep', category:'Sleep', icon:'moon' },
+  { id:'sleep_consistent', label:'Consistent bed/wake time', category:'Sleep', icon:'moon' },
+  { id:'supp_vitd', label:'Vitamin D3 (2,000-4,000 IU)', category:'Supplements', icon:'pill' },
+  { id:'supp_fishoil', label:'Fish Oil EPA+DHA (1-2g)', category:'Supplements', icon:'pill' },
+  { id:'supp_vitc', label:'Vitamin C (500mg with iron-rich meal)', category:'Supplements', icon:'pill' },
+  { id:'exercise', label:'Completed today\'s workout', category:'Exercise', icon:'dumbbell' },
+  { id:'nutrition_fiber', label:'Hit fiber target (25-35g)', category:'Nutrition', icon:'apple' },
+  { id:'nutrition_fish_iron', label:'Ate fatty fish or iron-rich meal', category:'Nutrition', icon:'apple' },
+  { id:'nutrition_no_sugar', label:'Avoided refined carbs/added sugars', category:'Nutrition', icon:'apple' },
+  { id:'nutrition_hydration', label:'Stayed hydrated', category:'Nutrition', icon:'apple' },
+  { id:'wellness_mindfulness', label:'Mindfulness/breathing (10-20 min)', category:'Wellness', icon:'brain' },
+  { id:'wellness_no_nicotine', label:'Reduced/no nicotine use', category:'Wellness', icon:'brain' },
+];
+
+const WEEKLY_SCHEDULE = {
+  Mon: { exercise:'Resistance: Upper Body', exerciseType:'resistance', nutrition:'High-protein, iron-rich meal', other:'Supplements, 10 min mindfulness', details:'Bench press, rows, overhead press' },
+  Tue: { exercise:'Cardio (30-45 min)', exerciseType:'cardio', nutrition:'Fatty fish meal', other:'Sun exposure if possible', details:'Brisk walk / cycling / jogging' },
+  Wed: { exercise:'Resistance: Lower Body', exerciseType:'resistance', nutrition:'High-fiber focus', other:'Supplements, stress management', details:'Squats, deadlifts, lunges' },
+  Thu: { exercise:'HIIT / Intervals (20-30 min)', exerciseType:'cardio', nutrition:'Lean protein + veggies', other:'Supplements', details:'Interval training, moderate-high intensity' },
+  Fri: { exercise:'Resistance: Upper Body', exerciseType:'resistance', nutrition:'Fatty fish or iron-rich meal', other:'10 min mindfulness', details:'Bench variations, pull-ups, rows' },
+  Sat: { exercise:'Outdoor Cardio + Optional Lift', exerciseType:'cardio', nutrition:'Balanced whole foods', other:'Sun exposure, active recovery', details:'Walk / hike / cycling, 30-60 min' },
+  Sun: { exercise:'Light Walk / Rest', exerciseType:'rest', nutrition:'Meal prep for the week', other:'Sleep hygiene focus, early bedtime', details:'Active recovery, 20-30 min' },
+};
+
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAY_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const LAB_MARKERS = [
+  { key:'triglycerides', label:'Triglycerides', unit:'mg/dL', target:'<150', targetVal:150, dir:'lower' },
+  { key:'vitaminD', label:'Vitamin D', unit:'ng/mL', target:'55-80', targetVal:67.5, dir:'higher' },
+  { key:'hdl', label:'HDL', unit:'mg/dL', target:'>55', targetVal:55, dir:'higher' },
+  { key:'shbg', label:'SHBG', unit:'nmol/L', target:'30-50', targetVal:40, dir:'higher' },
+  { key:'apoB', label:'ApoB', unit:'mg/dL', target:'<90', targetVal:90, dir:'lower' },
+  { key:'ferritin', label:'Ferritin', unit:'ng/mL', target:'>100', targetVal:100, dir:'higher' },
+  { key:'remnantCholesterol', label:'Remnant Chol', unit:'mg/dL', target:'<20', targetVal:20, dir:'lower' },
+  { key:'totalTestosterone', label:'Total Testosterone', unit:'ng/dL', target:'500-900', targetVal:700, dir:'higher' },
+  { key:'freeTestosterone', label:'Free Testosterone', unit:'pg/mL', target:'>100', targetVal:150, dir:'higher' },
+  { key:'totalCholesterol', label:'Total Cholesterol', unit:'mg/dL', target:'<200', targetVal:200, dir:'lower' },
+  { key:'ldl', label:'LDL', unit:'mg/dL', target:'<100', targetVal:100, dir:'lower' },
+  { key:'hsCRP', label:'hs-CRP', unit:'mg/L', target:'<1.0', targetVal:1, dir:'lower' },
+];
+
+const INITIAL_LAB = {
+  date:'2026-04-08', triglycerides:248, vitaminD:23.4, hdl:48.2, shbg:22.5,
+  apoB:94.7, ferritin:98.1, remnantCholesterol:49.59, totalTestosterone:696,
+  freeTestosterone:178.71, totalCholesterol:221, ldl:123.2, hsCRP:0.5
+};
+
+const CATEGORY_COLORS = {
+  Sleep: 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700',
+  Supplements: 'bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-700',
+  Exercise: 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700',
+  Nutrition: 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-700',
+  Wellness: 'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-700',
+};
+
+const CATEGORY_ICONS = {
+  Sleep: '<path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/>',
+  Supplements: '<path d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/>',
+  Exercise: '<path d="M6.5 6.5h11M6 12h12M6.5 17.5h11M4 6.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM4 17.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM23 6.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM23 17.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>',
+  Nutrition: '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>',
+  Wellness: '<path d="M12 2a7 7 0 017 7c0 5.25-7 13-7 13S5 14.25 5 9a7 7 0 017-7zm0 9.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/>',
+};
+
+// ===== STATE =====
+let currentDate = new Date();
+let weekOffset = 0;
+let weeklyChartInstance = null;
+let markersChartInstance = null;
+
+function getStore() {
+  const raw = localStorage.getItem('healthTracker');
+  if (raw) return JSON.parse(raw);
+  const store = { dailyLogs: {}, labResults: [INITIAL_LAB], settings: { darkMode: false } };
+  localStorage.setItem('healthTracker', JSON.stringify(store));
+  return store;
+}
+
+function saveStore(store) {
+  localStorage.setItem('healthTracker', JSON.stringify(store));
+}
+
+function dateKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function formatDate(d) {
+  return MONTH_NAMES[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+}
+
+function isToday(d) {
+  const t = new Date();
+  return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate();
+}
+
+// ===== THEME =====
+function applyTheme(dark) {
+  document.documentElement.classList.toggle('dark', dark);
+  document.body.classList.toggle('bg-gray-50', !dark);
+  document.body.classList.toggle('bg-gray-950', dark);
+  document.body.classList.toggle('text-gray-800', !dark);
+  document.body.classList.toggle('text-gray-100', dark);
+  document.getElementById('sunIcon').classList.toggle('hidden', !dark);
+  document.getElementById('moonIcon').classList.toggle('hidden', dark);
+}
+
+function toggleTheme() {
+  const store = getStore();
+  store.settings.darkMode = !store.settings.darkMode;
+  saveStore(store);
+  applyTheme(store.settings.darkMode);
+  // Redraw charts with updated colors
+  if (!document.getElementById('tab-progress').classList.contains('hidden')) {
+    renderProgress();
+  }
+}
+
+// ===== TABS =====
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+  if (tab === 'daily') renderDaily();
+  if (tab === 'weekly') renderWeekly();
+  if (tab === 'progress') renderProgress();
+}
+
+// ===== TAB 1: DAILY CHECKLIST =====
+function changeDay(offset) {
+  currentDate.setDate(currentDate.getDate() + offset);
+  renderDaily();
+}
+
+function getExerciseLabel(d) {
+  const dayName = DAY_NAMES[d.getDay()];
+  const sched = WEEKLY_SCHEDULE[dayName];
+  return sched ? sched.exercise : 'Rest';
+}
+
+function renderDaily() {
+  const dk = dateKey(currentDate);
+  const store = getStore();
+  const log = store.dailyLogs[dk] || {};
+  const todayLabel = isToday(currentDate) ? ' (Today)' : '';
+
+  document.getElementById('dailyDateLabel').textContent = formatDate(currentDate) + todayLabel;
+  document.getElementById('dailyDayLabel').textContent = DAY_FULL[currentDate.getDay()];
+
+  const container = document.getElementById('checklistContainer');
+  container.innerHTML = '';
+
+  const groups = {};
+  CHECKLIST_ITEMS.forEach(item => {
+    if (!groups[item.category]) groups[item.category] = [];
+    groups[item.category].push(item);
+  });
+
+  let totalChecked = 0;
+  const totalItems = CHECKLIST_ITEMS.length;
+
+  Object.entries(groups).forEach(([cat, items]) => {
+    const colors = CATEGORY_COLORS[cat];
+    const card = document.createElement('div');
+    card.className = `rounded-xl border p-4 ${colors} transition-colors`;
+
+    let html = `<div class="flex items-center gap-2 mb-3">
+      <svg class="w-4 h-4 opacity-60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">${CATEGORY_ICONS[cat]}</svg>
+      <h3 class="font-semibold text-sm dark:text-white">${cat}</h3>
+    </div><div class="space-y-2">`;
+
+    items.forEach(item => {
+      const checked = !!log[item.id];
+      if (checked) totalChecked++;
+      let label = item.label;
+      if (item.id === 'exercise') {
+        label = getExerciseLabel(currentDate);
+      }
+      html += `<label class="flex items-center gap-3 cursor-pointer group">
+        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleCheck('${dk}','${item.id}',this.checked)" class="shrink-0">
+        <span class="text-sm dark:text-gray-200 ${checked ? 'line-through opacity-50' : ''} group-hover:opacity-80 transition">${label}</span>
+      </label>`;
+    });
+
+    html += '</div>';
+    card.innerHTML = html;
+    container.appendChild(card);
+  });
+
+  // Update progress ring
+  const pct = totalItems > 0 ? totalChecked / totalItems : 0;
+  const circumference = 2 * Math.PI * 42;
+  const offset = circumference * (1 - pct);
+  document.getElementById('progressRing').style.strokeDashoffset = offset;
+  document.getElementById('progressCount').textContent = totalChecked + '/' + totalItems;
+}
+
+function toggleCheck(dk, id, checked) {
+  const store = getStore();
+  if (!store.dailyLogs[dk]) store.dailyLogs[dk] = {};
+  store.dailyLogs[dk][id] = checked;
+  saveStore(store);
+  renderDaily();
+}
+
+// ===== TAB 2: WEEKLY SCHEDULE =====
+function getWeekStart(offset) {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? 6 : day - 1; // Monday start
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - diff + (offset * 7));
+  monday.setHours(0,0,0,0);
+  return monday;
+}
+
+function changeWeek(dir) {
+  weekOffset += dir;
+  renderWeekly();
+}
+
+function renderWeekly() {
+  const monday = getWeekStart(weekOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  document.getElementById('weekLabel').textContent =
+    formatDate(monday) + ' - ' + formatDate(sunday);
+
+  const grid = document.getElementById('weekGrid');
+  grid.innerHTML = '';
+
+  const schedOrder = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const today = new Date();
+
+  schedOrder.forEach((dayName, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const sched = WEEKLY_SCHEDULE[dayName];
+    const isCurrentDay = d.getFullYear()===today.getFullYear() && d.getMonth()===today.getMonth() && d.getDate()===today.getDate();
+
+    const typeColors = {
+      resistance: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+      cardio: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+      rest: 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400',
+    };
+    const typeBadge = typeColors[sched.exerciseType] || typeColors.rest;
+
+    const card = document.createElement('div');
+    card.className = `bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 transition-colors ${isCurrentDay ? 'day-highlight' : ''}`;
+
+    card.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-bold dark:text-white">${dayName}</span>
+          <span class="text-xs text-gray-400">${MONTH_NAMES[d.getMonth()]} ${d.getDate()}</span>
+          ${isCurrentDay ? '<span class="text-[10px] bg-health-500 text-white px-1.5 py-0.5 rounded-full font-medium">TODAY</span>' : ''}
+        </div>
+        <span class="text-[10px] px-2 py-0.5 rounded-full font-medium ${typeBadge}">${sched.exerciseType}</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+        <div>
+          <p class="text-gray-400 dark:text-gray-500 mb-0.5 font-medium">Exercise</p>
+          <p class="dark:text-gray-200">${sched.exercise}</p>
+          <p class="text-gray-400 dark:text-gray-600 italic mt-0.5">${sched.details}</p>
+        </div>
+        <div>
+          <p class="text-gray-400 dark:text-gray-500 mb-0.5 font-medium">Nutrition</p>
+          <p class="dark:text-gray-200">${sched.nutrition}</p>
+        </div>
+        <div>
+          <p class="text-gray-400 dark:text-gray-500 mb-0.5 font-medium">Other</p>
+          <p class="dark:text-gray-200">${sched.other}</p>
+        </div>
+      </div>`;
+
+    grid.appendChild(card);
+  });
+}
+
+// ===== TAB 3: PROGRESS =====
+function calcStreaks(store) {
+  const dates = Object.keys(store.dailyLogs).sort().reverse();
+  let current = 0, best = 0, streak = 0;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  // Build sorted list of dates that have at least 1 check
+  const activeDates = dates.filter(dk => {
+    const log = store.dailyLogs[dk];
+    return Object.values(log).some(v => v === true);
+  }).sort().reverse();
+
+  if (activeDates.length === 0) return { current:0, best:0, total:0 };
+
+  // Calculate current streak from today/yesterday backward
+  const checkDate = new Date(today);
+  let started = false;
+  for (let i = 0; i < 365; i++) {
+    const dk = dateKey(checkDate);
+    const log = store.dailyLogs[dk];
+    const hasChecks = log && Object.values(log).some(v => v === true);
+    if (hasChecks) {
+      current++;
+      started = true;
+    } else if (started) {
+      break;
+    } else if (i > 1) {
+      break;
+    }
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  // Calculate best streak
+  const sortedDates = activeDates.slice().sort();
+  streak = 1;
+  best = 1;
+  for (let i = 1; i < sortedDates.length; i++) {
+    const prev = new Date(sortedDates[i-1]);
+    const curr = new Date(sortedDates[i]);
+    const diff = (curr - prev) / (1000*60*60*24);
+    if (diff === 1) {
+      streak++;
+      best = Math.max(best, streak);
+    } else {
+      streak = 1;
+    }
+  }
+  best = Math.max(best, current);
+
+  return { current, best, total: activeDates.length };
+}
+
+function renderHeatmap(store) {
+  const container = document.getElementById('heatmapContainer');
+  container.innerHTML = '';
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const totalItems = CHECKLIST_ITEMS.length;
+
+  // 84 days = 12 weeks
+  for (let i = 83; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dk = dateKey(d);
+    const log = store.dailyLogs[dk] || {};
+    const checked = Object.values(log).filter(v => v === true).length;
+    const pct = totalItems > 0 ? checked / totalItems : 0;
+
+    let color = 'bg-gray-200 dark:bg-gray-700';
+    if (pct > 0 && pct <= 0.33) color = 'bg-health-200';
+    else if (pct > 0.33 && pct <= 0.66) color = 'bg-health-400';
+    else if (pct > 0.66) color = 'bg-health-600';
+
+    const cell = document.createElement('div');
+    cell.className = `heatmap-cell ${color}`;
+    cell.title = `${dk}: ${checked}/${totalItems}`;
+    container.appendChild(cell);
+  }
+}
+
+function renderWeeklyChart(store) {
+  const ctx = document.getElementById('weeklyChart').getContext('2d');
+  const isDark = document.documentElement.classList.contains('dark');
+
+  // Get last 8 weeks of data
+  const weeks = [];
+  const today = new Date();
+  for (let w = 7; w >= 0; w--) {
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - (w * 7) - today.getDay() + 1);
+    let totalChecked = 0, totalPossible = 0;
+    for (let d = 0; d < 7; d++) {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + d);
+      const dk = dateKey(day);
+      const log = store.dailyLogs[dk] || {};
+      const checked = Object.values(log).filter(v => v === true).length;
+      totalChecked += checked;
+      totalPossible += CHECKLIST_ITEMS.length;
+    }
+    const pct = totalPossible > 0 ? Math.round((totalChecked / totalPossible) * 100) : 0;
+    weeks.push({
+      label: `${MONTH_NAMES[weekStart.getMonth()]} ${weekStart.getDate()}`,
+      pct
+    });
+  }
+
+  if (weeklyChartInstance) weeklyChartInstance.destroy();
+  weeklyChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: weeks.map(w => w.label),
+      datasets: [{
+        label: 'Completion %',
+        data: weeks.map(w => w.pct),
+        backgroundColor: 'rgba(34,197,94,0.6)',
+        borderColor: 'rgba(34,197,94,1)',
+        borderWidth: 1,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { beginAtZero: true, max: 100, ticks: { color: isDark ? '#9ca3af' : '#6b7280', callback: v => v+'%' }, grid: { color: isDark ? '#374151' : '#e5e7eb' } },
+        x: { ticks: { color: isDark ? '#9ca3af' : '#6b7280' }, grid: { display: false } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+function renderMarkersChart(store) {
+  const ctx = document.getElementById('markersChart').getContext('2d');
+  const isDark = document.documentElement.classList.contains('dark');
+  const results = store.labResults.slice().sort((a,b) => a.date.localeCompare(b.date));
+
+  // Show key markers: triglycerides, vitaminD, hdl, apoB
+  const keyMarkers = ['triglycerides','vitaminD','hdl','apoB'];
+  const colors = ['#ef4444','#f59e0b','#3b82f6','#8b5cf6'];
+
+  const datasets = keyMarkers.map((key, i) => {
+    const marker = LAB_MARKERS.find(m => m.key === key);
+    return {
+      label: marker.label,
+      data: results.map(r => r[key] ?? null),
+      borderColor: colors[i],
+      backgroundColor: colors[i] + '20',
+      tension: 0.3,
+      pointRadius: 4,
+      fill: false,
+    };
+  });
+
+  if (markersChartInstance) markersChartInstance.destroy();
+  markersChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: results.map(r => r.date),
+      datasets
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: { ticks: { color: isDark ? '#9ca3af' : '#6b7280' }, grid: { color: isDark ? '#374151' : '#e5e7eb' } },
+        x: { ticks: { color: isDark ? '#9ca3af' : '#6b7280' }, grid: { display: false } }
+      },
+      plugins: { legend: { labels: { color: isDark ? '#d1d5db' : '#374151', usePointStyle: true, pointStyle: 'circle' } } }
+    }
+  });
+}
+
+function renderMarkerCards(store) {
+  const container = document.getElementById('markerCards');
+  container.innerHTML = '';
+  const results = store.labResults.slice().sort((a,b) => a.date.localeCompare(b.date));
+  const latest = results[results.length - 1];
+  const prev = results.length > 1 ? results[results.length - 2] : null;
+
+  // Show the 7 primary markers
+  const primaryKeys = ['triglycerides','vitaminD','hdl','shbg','apoB','ferritin','remnantCholesterol'];
+
+  primaryKeys.forEach(key => {
+    const marker = LAB_MARKERS.find(m => m.key === key);
+    if (!marker) return;
+    const val = latest[key];
+    if (val === undefined || val === null) return;
+
+    let trend = '';
+    if (prev && prev[key] !== undefined) {
+      const diff = val - prev[key];
+      if (diff > 0) trend = marker.dir === 'higher' ? '<span class="text-green-500">&#9650;</span>' : '<span class="text-red-500">&#9650;</span>';
+      else if (diff < 0) trend = marker.dir === 'lower' ? '<span class="text-green-500">&#9660;</span>' : '<span class="text-red-500">&#9660;</span>';
+      else trend = '<span class="text-gray-400">&#8212;</span>';
+    }
+
+    // Status color
+    let statusColor = 'text-yellow-600 dark:text-yellow-400';
+    if (marker.dir === 'lower' && val < marker.targetVal) statusColor = 'text-green-600 dark:text-green-400';
+    else if (marker.dir === 'higher' && val > marker.targetVal) statusColor = 'text-green-600 dark:text-green-400';
+
+    const card = document.createElement('div');
+    card.className = 'bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 transition-colors';
+    card.innerHTML = `
+      <p class="text-[10px] text-gray-400 dark:text-gray-500 font-medium mb-1">${marker.label}</p>
+      <div class="flex items-baseline gap-1">
+        <span class="text-lg font-bold ${statusColor}">${val}</span>
+        <span class="text-[10px] text-gray-400">${marker.unit}</span>
+        ${trend}
+      </div>
+      <p class="text-[10px] text-gray-400 mt-1">Target: ${marker.target}</p>`;
+    container.appendChild(card);
+  });
+}
+
+function renderLabForm() {
+  const container = document.getElementById('labFields');
+  container.innerHTML = '';
+  LAB_MARKERS.forEach(m => {
+    container.innerHTML += `
+      <div>
+        <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">${m.label} (${m.unit})</label>
+        <input type="number" step="any" name="${m.key}" placeholder="${m.target}" class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-health-400 outline-none">
+      </div>`;
+  });
+}
+
+function addLabResult(e) {
+  e.preventDefault();
+  const store = getStore();
+  const form = document.getElementById('labForm');
+  const date = document.getElementById('labDate').value;
+  if (!date) return;
+
+  const result = { date };
+  let hasValue = false;
+  LAB_MARKERS.forEach(m => {
+    const input = form.querySelector(`[name="${m.key}"]`);
+    if (input && input.value) {
+      result[m.key] = parseFloat(input.value);
+      hasValue = true;
+    }
+  });
+
+  if (!hasValue) return;
+
+  // Replace if same date exists
+  const idx = store.labResults.findIndex(r => r.date === date);
+  if (idx >= 0) store.labResults[idx] = { ...store.labResults[idx], ...result };
+  else store.labResults.push(result);
+
+  saveStore(store);
+  form.reset();
+  renderProgress();
+}
+
+function renderProgress() {
+  const store = getStore();
+  const streaks = calcStreaks(store);
+
+  document.getElementById('currentStreak').textContent = streaks.current;
+  document.getElementById('bestStreak').textContent = streaks.best;
+  document.getElementById('totalDaysTracked').textContent = streaks.total;
+
+  renderHeatmap(store);
+  renderWeeklyChart(store);
+  renderMarkersChart(store);
+  renderMarkerCards(store);
+  renderLabForm();
+}
+
+// ===== INIT =====
+function init() {
+  const store = getStore();
+  applyTheme(store.settings.darkMode);
+
+  // Set header date
+  document.getElementById('headerDate').textContent = formatDate(new Date());
+
+  // Set lab date default
+  document.getElementById('labDate').valueAsDate = new Date();
+
+  renderDaily();
+}
+
+// init() is called by checkAuth or attemptUnlock after password verification
+</script>
+</body>
+</html>

@@ -164,6 +164,13 @@ tailwind.config = {
       <div id="markerCards" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4"></div>
     </div>
 
+    <!-- Restart Program -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-5 mb-5 transition-colors">
+      <h3 class="font-semibold text-sm mb-1 dark:text-white">Program</h3>
+      <p class="text-xs text-gray-400 mb-3">Started Apr 27, 2026. Reset clears all daily logs — lab results are kept.</p>
+      <button onclick="resetProgram()" class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition">Restart Program</button>
+    </div>
+
     <!-- Add Lab Result -->
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-5 transition-colors">
       <h3 class="font-semibold text-sm mb-3 dark:text-white">Add Lab Result</h3>
@@ -232,15 +239,16 @@ const CHECKLIST_ITEMS = [
 ];
 
 const WEEKLY_SCHEDULE = {
-  Mon: { exercise:'Resistance: Upper Body', exerciseType:'resistance', nutrition:'High-protein, iron-rich meal', other:'Supplements, 10 min mindfulness', details:'Bench press, rows, overhead press' },
+  Mon: { exercise:'Resistance: Upper Body + 20 min Cardio', exerciseType:'both', nutrition:'High-protein, iron-rich meal', other:'Supplements, 10 min mindfulness', details:'Bench press, rows, OHP — then 20 min brisk walk or bike' },
   Tue: { exercise:'Cardio (30-45 min)', exerciseType:'cardio', nutrition:'Fatty fish meal', other:'Sun exposure if possible', details:'Brisk walk / cycling / jogging' },
-  Wed: { exercise:'Resistance: Lower Body', exerciseType:'resistance', nutrition:'High-fiber focus', other:'Supplements, stress management', details:'Squats, deadlifts, lunges' },
+  Wed: { exercise:'Resistance: Lower Body + 20 min Cardio', exerciseType:'both', nutrition:'High-fiber focus', other:'Supplements, stress management', details:'Squats, deadlifts, lunges — then 20 min jog or cycle' },
   Thu: { exercise:'HIIT / Intervals (20-30 min)', exerciseType:'cardio', nutrition:'Lean protein + veggies', other:'Supplements', details:'Interval training, moderate-high intensity' },
-  Fri: { exercise:'Resistance: Upper Body', exerciseType:'resistance', nutrition:'Fatty fish or iron-rich meal', other:'10 min mindfulness', details:'Bench variations, pull-ups, rows' },
+  Fri: { exercise:'Resistance: Upper Body + 20 min Cardio', exerciseType:'both', nutrition:'Fatty fish or iron-rich meal', other:'10 min mindfulness', details:'Bench variations, pull-ups, rows — then 20 min light cardio' },
   Sat: { exercise:'Outdoor Cardio + Optional Lift', exerciseType:'cardio', nutrition:'Balanced whole foods', other:'Sun exposure, active recovery', details:'Walk / hike / cycling, 30-60 min' },
-  Sun: { exercise:'Light Walk / Rest', exerciseType:'rest', nutrition:'Meal prep for the week', other:'Sleep hygiene focus, early bedtime', details:'Active recovery, 20-30 min' },
+  Sun: { exercise:'Cardio: Active Recovery (30 min)', exerciseType:'cardio', nutrition:'Meal prep for the week', other:'Sleep hygiene focus, early bedtime', details:'Light walk, easy bike ride or swim' },
 };
 
+const PROGRAM_START = new Date('2026-04-27');
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DAY_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -444,8 +452,10 @@ function renderWeekly() {
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
 
+  const weekNum = Math.floor((monday - PROGRAM_START) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  const weekNumStr = weekNum >= 1 ? ` — Program Week ${weekNum}` : '';
   document.getElementById('weekLabel').textContent =
-    formatDate(monday) + ' - ' + formatDate(sunday);
+    formatDate(monday) + ' – ' + formatDate(sunday) + weekNumStr;
 
   const grid = document.getElementById('weekGrid');
   grid.innerHTML = '';
@@ -462,6 +472,7 @@ function renderWeekly() {
     const typeColors = {
       resistance: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
       cardio: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+      both: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300',
       rest: 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400',
     };
     const typeBadge = typeColors[sched.exerciseType] || typeColors.rest;
@@ -769,6 +780,17 @@ function renderProgress() {
   renderMarkersChart(store);
   renderMarkerCards(store);
   renderLabForm();
+}
+
+// ===== RESET =====
+function resetProgram() {
+  if (!confirm('Reset all daily tracking logs? This cannot be undone. Lab results will be kept.')) return;
+  const store = getStore();
+  store.dailyLogs = {};
+  saveStore(store);
+  currentDate = new Date();
+  renderDaily();
+  if (!document.getElementById('tab-progress').classList.contains('hidden')) renderProgress();
 }
 
 // ===== INIT =====
